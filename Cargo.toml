@@ -1,0 +1,20 @@
+[package]
+name = "easyray"
+version = "0.0.1"
+authors = ["Artem V. Ageev <artem.v.ageev@gmail.com>"]
+license = "LGPL-2.1-only"
+repository = "https://github.com/theavege/easyray-rs"
+description = "Löve-pattern for RayLib"
+keywords = ["Löve"]
+categories = ["gui"]
+edition = "2024"
+exclude = ["examples"]
+
+[dependencies]
+rand = { version = "0.9" }
+
+[target.'cfg(windows)'.dependencies]
+raylib = { version = "6.0" }
+
+[target.'cfg(unix)'.dependencies]
+raylib = { version = "6.0" }
