@@ -64,6 +64,8 @@ catch {
         'https://aka.ms/vs/17/release/vs_community.exe'
     ) | Get-Package | Install-Packages
 }
-& cargo clippy --quiet  --examples | Out-Log
-& cargo build --release --examples | Out-Log
+& cargo clippy --quiet --features="ray" --example simple | Out-Log
+& cargo build --release --features="ray" --examples simple | Out-Log
+& cargo clippy --quiet --features="tui" --example console | Out-Log
+& cargo build --release --features="tui" --examples console | Out-Log
 Exit($LastExitCode)
