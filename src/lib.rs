@@ -1,10 +1,6 @@
 #[cfg(feature = "ray")]
 pub mod prelude {
     pub use raylib::prelude::*;
-    pub const SCREEN: (i32, i32) = (960, 540);
-    pub const CELL: i32 = 20;
-    pub const COLS: i32 = SCREEN.0 / CELL;
-    pub const ROWS: i32 = SCREEN.1 / CELL;
 
     pub mod solarized {
         use raylib::prelude::Color;
@@ -32,25 +28,32 @@ pub mod prelude {
     }
 
     pub trait Console: Default {
+        type Event: 'static;
         fn load(&mut self, path: &str);
         fn update(&mut self, dt: f32) -> bool;
-        fn handle(&mut self, key: KeyboardKey);
-        fn draw(&self, canvas: &mut RaylibDrawHandle);
+        fn handle(&mut self, event: Self::Event);
+        fn draw(
+            &self,
+            canvas: &mut RaylibDrawHandle,
+            width: i32,
+            height: i32,
+            key: Option<KeyboardKey>,
+        ) -> Option<Self::Event>;
         fn exit(&self, path: &str);
         fn run(title: &str) {
             let path = format!("{}/.config/{title}", std::env::var("HOMEPATH").unwrap());
             let mut model = Self::default();
             model.load(&path);
-            let (mut rl, thread) = raylib::init()
-                .title(title)
-                .build();
-            rl.set_target_fps(60);
+            let (mut rl, thread) = raylib::init().title(title).build();
+            rl.set_target_fps(48);
             rl.toggle_fullscreen();
             while model.update(rl.get_frame_time()) {
-                if let Some(key) = rl.get_key_pressed() {
-                    model.handle (key);
-                }
-                model.draw(&mut rl.begin_drawing(&thread));
+                let key = rl.get_key_pressed();
+                let (width, height) = (rl.get_screen_width(), rl.get_screen_height());
+                let mut canvas = rl.begin_drawing(&thread);
+                if let Some(msg) = model.draw(&mut canvas, width, height, key) {
+                    model.handle(msg);
+                };
             }
             model.exit(&path);
         }
@@ -63,7 +66,7 @@ pub mod prelude {
         Frame,
         crossterm::{
             ExecutableCommand,
-            event::{self, Event, KeyCode,  KeyEventKind, MouseEventKind},
+            event::{self, Event, KeyCode, KeyEventKind, MouseEventKind},
         },
         layout::{Constraint, Layout},
         prelude::*,
@@ -76,40 +79,35 @@ pub mod prelude {
     };
 
     pub trait Console: Default {
-        fn load(&mut self, path: &str);
+        fn load(self, path: &str) -> Self;
         fn update(&mut self, dt: f32) -> bool;
         fn handle(&mut self, event: Event);
         fn draw(&self, frame: &mut Frame);
         fn exit(&self, path: &str);
         fn run(title: &str) {
-            let path = format!("{}/.{title}", std::env::var(
-                match cfg!(target_os = "windows") {
-                    true => "HOMEPATH",
-                    false => "HOME",
-                }
-            ).unwrap());
-            let mut model = Self::default();
-            model.load(&path);
-            let mut terminal = ratatui::init();
-            std::io::stdout()
-                .execute(event::EnableMouseCapture)
-                .unwrap();
-            if let Ok(size) = terminal.size() {
-                model.handle(Event::Resize(size.width, size.height));
-            };
-            let mut time = std::time::Instant::now();
-            while model.update(time.elapsed().as_secs_f32()) {
-                time = std::time::Instant::now();
-                if event::poll(std::time::Duration::from_millis(20)).unwrap() {
-                    model.handle(event::read().unwrap());
+            ratatui::run(|terminal| {
+                let path = format!(
+                    "{}/.{title}",
+                    std::env::var(match cfg!(target_os = "windows") {
+                        true => "HOMEPATH",
+                        false => "HOME",
+                    })
+                    .unwrap()
+                );
+                let mut model = Self::default().load(&path);
+                if let Ok(size) = terminal.size() {
+                    model.handle(Event::Resize(size.width, size.height));
                 };
-                terminal.draw(|frm| model.draw(frm)).unwrap();
-            }
-            model.exit(&path);
-            std::io::stdout()
-                .execute(event::DisableMouseCapture)
-                .unwrap();
-            ratatui::restore();
+                let mut time = std::time::Instant::now();
+                while model.update(time.elapsed().as_secs_f32()) {
+                    time = std::time::Instant::now();
+                    if event::poll(std::time::Duration::from_millis(20)).unwrap() {
+                        model.handle(event::read().unwrap());
+                    };
+                    terminal.draw(|frm| model.draw(frm)).unwrap();
+                }
+                model.exit(&path);
+            });
         }
     }
 }
