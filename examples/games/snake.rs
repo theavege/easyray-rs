@@ -1,4 +1,3 @@
-
 use easyray::prelude::*;
 use rand::Rng;
 

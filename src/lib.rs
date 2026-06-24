@@ -41,7 +41,14 @@ pub mod prelude {
         ) -> Option<Self::Event>;
         fn exit(&self, path: &str);
         fn run(title: &str) {
-            let path = format!("{}/.config/{title}", std::env::var("HOMEPATH").unwrap());
+            let path = format!(
+                "{}/.config/{title}",
+                std::env::var(match cfg!(target_os = "windows") {
+                    true => "HOMEPATH",
+                    false => "HOME",
+                })
+                .unwrap()
+            );
             let mut model = Self::default();
             model.load(&path);
             let (mut rl, thread) = raylib::init().title(title).build();
