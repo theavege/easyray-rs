@@ -1,8 +1,8 @@
 use easyray::prelude::*;
 use rand::Rng;
 
-pub const COLS: i32 = 64;
-pub const ROWS: i32 = 36;
+pub const COLS: i32 = 32;
+pub const ROWS: i32 = 24;
 
 #[derive(Default, PartialEq)]
 pub enum Direc {
