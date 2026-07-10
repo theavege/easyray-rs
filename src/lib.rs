@@ -28,17 +28,10 @@ pub mod prelude {
     }
 
     pub trait Console: Default {
-        type Event: 'static;
         fn load(&mut self, path: &str);
-        fn update(&mut self, dt: f32) -> bool;
-        fn handle(&mut self, event: Self::Event);
-        fn draw(
-            &self,
-            canvas: &mut RaylibDrawHandle,
-            width: i32,
-            height: i32,
-            key: Option<KeyboardKey>,
-        ) -> Option<Self::Event>;
+        fn handle(&mut self, key: KeyboardKey) -> bool;
+        fn update(&mut self, dt: f32);
+        fn draw(&self, canvas: &mut RaylibDrawHandle, width: i32, height: i32);
         fn exit(&self, path: &str);
         fn run(title: &str) {
             let path = format!(
@@ -54,13 +47,14 @@ pub mod prelude {
             let (mut rl, thread) = raylib::init().title(title).build();
             rl.set_target_fps(48);
             rl.toggle_fullscreen();
-            while model.update(rl.get_frame_time()) {
-                let key = rl.get_key_pressed();
-                let (width, height) = (rl.get_screen_width(), rl.get_screen_height());
-                let mut canvas = rl.begin_drawing(&thread);
-                if let Some(msg) = model.draw(&mut canvas, width, height, key) {
-                    model.handle(msg);
-                };
+            let mut proccess = true;
+            let (width, height) = (rl.get_screen_width(), rl.get_screen_height());
+            while proccess {
+                if let Some(key) = rl.get_key_pressed() {
+                    proccess = model.handle(key);
+                }
+                model.update(rl.get_frame_time());
+                model.draw(&mut rl.begin_drawing(&thread), width, height);
             }
             model.exit(&path);
         }
@@ -86,9 +80,9 @@ pub mod prelude {
     };
 
     pub trait Console: Default {
-        fn load(self, path: &str) -> Self;
+        fn load(&mut self, path: &str);
         fn update(&mut self, dt: f32) -> bool;
-        fn handle(&mut self, event: Event);
+        fn handle(&mut self, event: Event) -> Option<bool>;
         fn draw(&self, frame: &mut Frame);
         fn exit(&self, path: &str);
         fn run(title: &str) {
@@ -101,17 +95,24 @@ pub mod prelude {
                     })
                     .unwrap()
                 );
-                let mut model = Self::default().load(&path);
-                if let Ok(size) = terminal.size() {
-                    model.handle(Event::Resize(size.width, size.height));
+                let mut model = Self::default();
+                model.load(&path);
+                let mut proccess: Option<bool> = if let Ok(size) = terminal.size() {
+                    model.handle(Event::Resize(size.width, size.height))
+                } else {
+                    None
                 };
-                let mut time = std::time::Instant::now();
-                while model.update(time.elapsed().as_secs_f32()) {
+                let mut time: std::time::Instant;
+                while let Some(run) = proccess {
                     time = std::time::Instant::now();
-                    if event::poll(std::time::Duration::from_millis(20)).unwrap() {
-                        model.handle(event::read().unwrap());
+                    proccess = if event::poll(std::time::Duration::from_millis(20)).unwrap() {
+                        model.handle(event::read().unwrap())
+                    } else {
+                        Some(false)
                     };
-                    terminal.draw(|frm| model.draw(frm)).unwrap();
+                    if model.update(time.elapsed().as_secs_f32()) || run {
+                        terminal.draw(|frm| model.draw(frm)).unwrap();
+                    }
                 }
                 model.exit(&path);
             });

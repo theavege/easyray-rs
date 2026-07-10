@@ -160,7 +160,7 @@ impl World {
 }
 
 impl Console for World {
-    fn load(mut self, path: &str) -> Self {
+    fn load(&mut self, path: &str) {
         if let Ok(value) = std::fs::read(path) {
             self.store.highscore = (
                 value[0] as u32 * Self::U8 + value[1] as u32,
@@ -168,7 +168,6 @@ impl Console for World {
             )
         };
         self.npc = self.store.wordlist();
-        self
     }
     fn update(&mut self, dt: f32) -> bool {
         if let Page::Play = self.page
@@ -184,20 +183,21 @@ impl Console for World {
                 self.store.highscore();
                 self.page = Page::Menu;
             }
+            return true;
         };
-        !self.npc.is_empty()
+        false
     }
-    fn handle(&mut self, event: Event) {
+    fn handle(&mut self, event: Event) -> Option<bool> {
         match event {
+            Event::FocusLost => {
+                self.page = Page::Menu;
+            }
             Event::Resize(w, h) => {
                 self.size = (w, h);
                 self.page = Page::Menu;
             }
-            Event::FocusLost => {
-                self.page = Page::Menu;
-            }
             Event::Key(value) => match (&self.page, value.code, value.kind) {
-                (&Page::Menu, KeyCode::Esc, KeyEventKind::Press) => self.npc.clear(),
+                (&Page::Menu, KeyCode::Esc, KeyEventKind::Press) => return None,
                 (&Page::Menu, KeyCode::Tab, KeyEventKind::Press) => {
                     self.store.lang = self.store.lang.switch();
                 }
@@ -217,10 +217,11 @@ impl Console for World {
                 (&Page::Play, KeyCode::Esc, KeyEventKind::Press) => {
                     self.page = Page::Menu;
                 }
-                _ => {}
+                _ => return Some(false),
             },
-            _ => {}
+            _ => return Some(false),
         }
+        Some(true)
     }
     fn draw(&self, frame: &mut Frame) {
         match self.page {

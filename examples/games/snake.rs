@@ -1,10 +1,7 @@
 use easyray::prelude::*;
 use rand::Rng;
 
-pub const COLS: i32 = 32;
-pub const ROWS: i32 = 24;
-
-#[derive(Default, PartialEq)]
+#[derive(Default, Clone)]
 pub enum Direc {
     #[default]
     Left,
@@ -14,24 +11,13 @@ pub enum Direc {
 }
 
 impl Direc {
-    pub fn next(&self, mut last: (i32, i32)) -> (i32, i32) {
+    fn way(&self) -> (i32, i32) {
         match *self {
-            Self::Left => last.0 -= 1,
-            Self::Right => last.0 += 1,
-            Self::Up => last.1 -= 1,
-            Self::Down => last.1 += 1,
+            Self::Left => (-1, 0),
+            Self::Right => (1, 0),
+            Self::Up => (0, -1),
+            Self::Down => (0, 1),
         }
-        (check_limit(last.0, COLS), check_limit(last.1, ROWS))
-    }
-}
-
-fn check_limit(coord: i32, limit: i32) -> i32 {
-    if coord < 0 {
-        limit - 1
-    } else if coord > limit {
-        0
-    } else {
-        coord
     }
 }
 
@@ -45,91 +31,84 @@ pub enum Page {
 #[derive(Default)]
 pub struct World {
     direc: Direc,
+    predi: Option<Direc>,
     apple: (i32, i32),
     body: Vec<(i32, i32)>,
-    page: Page,
+    field: (i32, i32),
     timer: f32,
+    page: Page,
 }
+
 impl World {
     fn eat(&mut self, next: (i32, i32)) {
         self.body.insert(0, next);
         while self.body.contains(&self.apple) {
             self.apple = (
-                rand::rng().random_range(0..COLS),
-                rand::rng().random_range(0..ROWS),
+                rand::rng().random_range(0..self.field.0),
+                rand::rng().random_range(0..self.field.1),
             )
         }
     }
+    fn turn(&mut self, value: Direc) {
+        if self.direc.way().0 != -value.way().0 && self.direc.way().1 != -value.way().1 {
+            self.predi = Some(value);
+        }
+    }
+    fn step(&mut self) -> f32 {
+        if let Some(value) = self.predi.clone() {
+            self.direc = value;
+            self.predi = None;
+        }
+        let next = (
+            (self.field.0 + self.body[0].0 + self.direc.way().0) % self.field.0,
+            (self.field.1 + self.body[0].1 + self.direc.way().1) % self.field.1,
+        );
+        if self.body.contains(&next) {
+            self.body.clear();
+            self.eat(next);
+            self.page = Page::Menu;
+        } else {
+            if next != self.apple {
+                self.body.pop();
+            }
+            self.eat(next);
+        };
+        0.0
+    }
 }
-pub enum Msg {
-    Exit,
-    Page(Page),
-    Down,
-    Left,
-    Right,
-    Up,
-}
+
 impl Console for World {
-    type Event = Msg;
     fn load(&mut self, _path: &str) {
+        self.field = (32, 24);
         self.eat(self.apple);
     }
-    fn update(&mut self, dt: f32) -> bool {
+    fn update(&mut self, dt: f32) {
         if let Page::Play = self.page {
-            self.timer += dt;
-            if self.timer > 1.0 / (3.0 + self.body.len() as f32 / 5.0) {
-                self.timer = 0.0;
-                let next = self.direc.next(self.body[0]);
-                if self.body.contains(&next) {
-                    self.body.clear();
-                } else {
-                    if next != self.apple {
-                        self.body.pop();
-                    }
-                    self.eat(next);
-                }
-            }
-        }
-        !self.body.is_empty()
-    }
-    fn handle(&mut self, event: Self::Event) {
-        match event {
-            Msg::Exit => self.body.clear(),
-            Msg::Page(value) => self.page = value,
-            Msg::Down => {
-                if [Direc::Left, Direc::Right].contains(&self.direc) {
-                    self.direc = Direc::Down;
-                }
-            }
-            Msg::Left => {
-                if [Direc::Down, Direc::Up].contains(&self.direc) {
-                    self.direc = Direc::Left;
-                }
-            }
-            Msg::Right => {
-                if [Direc::Down, Direc::Up].contains(&self.direc) {
-                    self.direc = Direc::Right;
-                }
-            }
-            Msg::Up => {
-                if [Direc::Left, Direc::Right].contains(&self.direc) {
-                    self.direc = Direc::Up;
-                }
+            self.timer = match self.timer > 1.0 / (3.0 + self.body.len() as f32 / 5.0) {
+                true => self.step(),
+                false => self.timer + dt,
             }
         }
     }
-    fn draw(
-        &self,
-        canvas: &mut RaylibDrawHandle,
-        width: i32,
-        height: i32,
-        key: Option<KeyboardKey>,
-    ) -> Option<Self::Event> {
-        let cell = (width / COLS, height / ROWS);
+    fn handle(&mut self, key: KeyboardKey) -> bool {
+        match (&self.page, key) {
+            (&Page::Menu, KeyboardKey::KEY_ESCAPE) => return false,
+            (&Page::Menu, KeyboardKey::KEY_ENTER) => self.page = Page::Play,
+            (&Page::Play, KeyboardKey::KEY_ESCAPE) => self.page = Page::Menu,
+            (&Page::Play, KeyboardKey::KEY_DOWN) => self.turn(Direc::Down),
+            (&Page::Play, KeyboardKey::KEY_UP) => self.turn(Direc::Up),
+            (&Page::Play, KeyboardKey::KEY_LEFT) => self.turn(Direc::Left),
+            (&Page::Play, KeyboardKey::KEY_RIGHT) => self.turn(Direc::Right),
+            _ => {}
+        }
+        true
+    }
+    fn draw(&self, canvas: &mut RaylibDrawHandle, width: i32, height: i32) {
+        let cell = (width / self.field.0, height / self.field.1);
         canvas.clear_background(solarized::BASE2);
         if let Page::Play = self.page {
-            for x in 0..COLS {
-                for y in 0..ROWS {
+            for y in 0..self.field.1 {
+                for x in 0..self.field.0 {
                     if (x + y) % 2 == 0 {
                         canvas.draw_rectangle(
                             x * cell.0,
@@ -151,28 +130,12 @@ impl Console for World {
                 cell.1,
                 solarized::GREEN,
             );
-            canvas.draw_rectangle(
-                self.apple.0 * cell.0,
-                self.apple.1 * cell.1,
-                cell.0,
-                cell.1,
+            canvas.draw_circle(
+                self.apple.0 * cell.0 + cell.0 / 2,
+                self.apple.1 * cell.1 + cell.1 / 2,
+                cell.0 as f32 / 2.0,
                 solarized::RED,
             );
-            if let Some(KeyboardKey::KEY_ESCAPE) = key {
-                return Some(Msg::Page(Page::Menu));
-            }
-            if let Some(KeyboardKey::KEY_DOWN) = key {
-                return Some(Msg::Down);
-            }
-            if let Some(KeyboardKey::KEY_UP) = key {
-                return Some(Msg::Up);
-            }
-            if let Some(KeyboardKey::KEY_LEFT) = key {
-                return Some(Msg::Left);
-            }
-            if let Some(KeyboardKey::KEY_RIGHT) = key {
-                return Some(Msg::Right);
-            }
         } else {
             let text = "MENU";
             let size = 44;
@@ -181,16 +144,9 @@ impl Console for World {
                 width / 2 - canvas.measure_text(text, size) / 2,
                 height / 2,
                 size,
-                solarized::GREEN,
+                solarized::BLUE,
             );
-            if let Some(KeyboardKey::KEY_ENTER) = key {
-                return Some(Msg::Page(Page::Play));
-            }
-            if let Some(KeyboardKey::KEY_ESCAPE) = key {
-                return Some(Msg::Exit);
-            }
         }
-        None
     }
     fn exit(&self, _path: &str) {}
 }
